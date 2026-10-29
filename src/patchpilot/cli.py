@@ -1,5 +1,5 @@
 """patchpilot scan --path . --out report.json
-patchpilot file-issues --report report.json --repo owner/name [--apply]   (without --apply = dry run)"""
+patchpilot file-issues --report report.json --repo owner/name [--apply] [--llm]   (without --apply = dry run)"""
 
 import argparse
 import json
@@ -19,6 +19,7 @@ def main():
     i.add_argument("--report", default="report.json")
     i.add_argument("--repo", required=True)
     i.add_argument("--apply", action="store_true", help="actually create issues (default: dry run)")
+    i.add_argument("--llm", action="store_true", help="with --apply: LLM summaries via the Anthropic API (paid)")
     args = p.parse_args()
 
     if args.cmd == "scan":
@@ -32,7 +33,13 @@ def main():
     else:
         with open(args.report) as f:
             report = json.load(f)
-        filed = file_issues(report, args.repo, dry_run=not args.apply)
+        llm = None
+        if args.llm and args.apply:  # dry runs stay free even with --llm
+            import anthropic
+            llm = anthropic.Anthropic()
+        elif args.llm:
+            print("note: --llm ignored on a dry run (template summaries are free)", file=sys.stderr)
+        filed = file_issues(report, args.repo, dry_run=not args.apply, llm=llm)
         print(f"{'filed' if args.apply else 'dry run'}: {len(filed)} issue(s)", file=sys.stderr)
 
 

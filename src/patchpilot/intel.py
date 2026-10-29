@@ -1,11 +1,30 @@
 """Vulnerability intelligence: OSV.dev (which versions are vulnerable) + CISA KEV (which bugs attackers really use)."""
 
+import re
+
 import httpx
+
+try:
+    from packaging.version import InvalidVersion, Version
+except ImportError:  # packaging only arrives via pytest locally; a plain pip install may lack it
+    Version = None
 
 OSV_BATCH = "https://api.osv.dev/v1/querybatch"
 OSV_VULN = "https://api.osv.dev/v1/vulns/{}"
 KEV_FEED = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
 TIMEOUT = 30.0
+
+
+def _version_key(v: str):
+    """Compare versions as numbers so 4.17.21 > 4.17.9 (as strings, "9" > "2")."""
+    if Version is not None:
+        try:
+            return (1, Version(v))
+        except InvalidVersion:
+            pass
+    # flag 0: unparseable sorts first, so [-1] stays a real version.
+    # shortcut: without packaging, 1.0.0-rc1 ranks above 1.0.0; add packaging to pyproject deps to fix.
+    return (0, tuple(int(n) for n in re.findall(r"\d+", v)))
 
 
 def query_osv(deps: list[dict], client: httpx.Client) -> dict[int, list[str]]:
@@ -23,8 +42,10 @@ def fixed_versions(vuln: dict, name: str) -> list[str]:
         if affected.get("package", {}).get("name", "").lower() != name.lower():
             continue
         for rng in affected.get("ranges", []):
+            if rng.get("type") == "GIT":  # GIT ranges list commit hashes, not versions you can upgrade to
+                continue
             out += [e["fixed"] for e in rng.get("events", []) if "fixed" in e]
-    return sorted(set(out))
+    return sorted(set(out), key=_version_key)
 
 
 def vuln_details(vuln_id: str, client: httpx.Client) -> dict:

@@ -2,6 +2,7 @@
 so in the GitHub Action it runs in a separate job behind a human approval gate."""
 
 import os
+import re
 
 import httpx
 
@@ -15,9 +16,15 @@ def issue_title(f: dict) -> str:
     return f"[{f['priority']}] {f['id']} in {f['package']}@{f['version']}"
 
 
+def no_mentions(text: str) -> str:
+    """Advisory/LLM text is untrusted: wrap @handles in backticks so GitHub doesn't notify anyone (emails untouched)."""
+    text = text.replace("`", "'")  # no backticks left, so an @handle can't hide in (or break out of) a code span
+    return re.sub(r"(?<!\w)@[\w./-]+", lambda m: f"`{m.group()}`", text)
+
+
 def issue_body(f: dict, summary: str) -> str:
     return "\n".join([
-        summary, "",
+        no_mentions(summary), "",
         f"- **Package:** `{f['package']}` {f['version']} ({f['ecosystem']}), found in `{f['source']}`",
         f"- **Advisory:** [{f['id']}]({f['url']}) {', '.join(f['cves'])}",
         f"- **Known exploited (CISA KEV):** {'YES' if f['known_exploited'] else 'no'}",
@@ -26,10 +33,34 @@ def issue_body(f: dict, summary: str) -> str:
     ])
 
 
-def file_issues(report: dict, repo: str, dry_run: bool = True) -> list[str]:
-    """Create issues for new findings; skip ones already open (matched by advisory id). Returns titles filed."""
-    findings = report["findings"]
+def new_findings(findings: list[dict], seen: set[str]) -> list[dict]:
+    """Drop findings whose advisory id is in `seen` (exact match) or already earlier in this run. Mutates `seen`."""
+    out = []
+    for f in findings:
+        if f["id"] not in seen:
+            seen.add(f["id"])
+            out.append(f)
+    return out
+
+
+def open_issue_ids(gh: httpx.Client, repo: str) -> set[str]:
+    """Advisory ids of every open patchpilot issue, across all pages. Title format: "[P1] <id> in pkg@ver"."""
+    ids, page = set(), 1
+    while True:
+        r = gh.get(f"/repos/{repo}/issues", params={"labels": "patchpilot", "state": "open", "per_page": 100, "page": page})
+        r.raise_for_status()
+        batch = r.json()
+        ids |= {i["title"].split()[1] for i in batch if len(i["title"].split()) > 1}
+        if len(batch) < 100:
+            return ids
+        page += 1
+
+
+def file_issues(report: dict, repo: str, dry_run: bool = True, llm=None) -> list[str]:
+    """Create issues for new findings; skip ones already open (matched by advisory id). Returns titles filed.
+    `llm` is an Anthropic client, used only with --apply; dry runs always use the free template."""
     if dry_run:
+        findings = new_findings(report["findings"], set())
         for f in findings:
             print(f"--- would file: {issue_title(f)}\n{issue_body(f, summarize(f))}\n")
         return [issue_title(f) for f in findings]
@@ -39,13 +70,8 @@ def file_issues(report: dict, repo: str, dry_run: bool = True) -> list[str]:
     with httpx.Client(base_url=API, headers=headers, timeout=30) as gh:
         for name, color in LABELS.items():  # 422 = label already exists, which is fine
             gh.post(f"/repos/{repo}/labels", json={"name": name, "color": color})
-        existing = gh.get(f"/repos/{repo}/issues", params={"labels": "patchpilot", "state": "open", "per_page": 100})
-        existing.raise_for_status()
-        open_titles = " ".join(i["title"] for i in existing.json())
-        for f in findings:
-            if f["id"] in open_titles:  # dedupe: never file the same advisory twice
-                continue
-            r = gh.post(f"/repos/{repo}/issues", json={"title": issue_title(f), "body": issue_body(f, summarize(f)),
+        for f in new_findings(report["findings"], open_issue_ids(gh, repo)):  # dedupe: never file the same advisory twice
+            r = gh.post(f"/repos/{repo}/issues", json={"title": issue_title(f), "body": issue_body(f, summarize(f, llm)),
                                                        "labels": ["patchpilot", "security", f["priority"]]})
             r.raise_for_status()
             filed.append(issue_title(f))

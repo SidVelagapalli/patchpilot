@@ -41,4 +41,4 @@ jobs:
       - run: patchpilot file-issues --report report.json --repo "${{ github.repository }}" --apply
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}   # optional: better summaries
+          # Paid LLM summaries are opt-in: add --llm above and ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }} here.
