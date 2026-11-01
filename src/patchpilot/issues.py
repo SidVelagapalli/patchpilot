@@ -16,15 +16,17 @@ def issue_title(f: dict) -> str:
     return f"[{f['priority']}] {f['id']} in {f['package']}@{f['version']}"
 
 
-def no_mentions(text: str) -> str:
-    """Advisory/LLM text is untrusted: wrap @handles in backticks so GitHub doesn't notify anyone (emails untouched)."""
-    text = text.replace("`", "'")  # no backticks left, so an @handle can't hide in (or break out of) a code span
-    return re.sub(r"(?<!\w)@[\w./-]+", lambda m: f"`{m.group()}`", text)
+def fenced(text: str) -> str:
+    """Advisory/LLM text is untrusted, so it goes in a code block: GitHub renders no @mentions, HTML or entities there.
+    The fence is longer than any run of backticks in the text, so the text can't close the block early."""
+    longest = max((len(run) for run in re.findall(r"`+", text)), default=0)
+    fence = "`" * max(3, longest + 1)
+    return f"{fence}text\n{text}\n{fence}"
 
 
 def issue_body(f: dict, summary: str) -> str:
     return "\n".join([
-        no_mentions(summary), "",
+        fenced(summary), "",
         f"- **Package:** `{f['package']}` {f['version']} ({f['ecosystem']}), found in `{f['source']}`",
         f"- **Advisory:** [{f['id']}]({f['url']}) {', '.join(f['cves'])}",
         f"- **Known exploited (CISA KEV):** {'YES' if f['known_exploited'] else 'no'}",

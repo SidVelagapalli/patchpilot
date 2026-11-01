@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import httpx
 
 import patchpilot.issues
+from patchpilot.deps import find_dependencies, parse_package_lock
 from patchpilot.intel import fixed_versions
 from patchpilot.issues import file_issues, issue_body
 from patchpilot.summarize import summarize, template
@@ -101,13 +102,24 @@ def test_dedupe_reads_every_page_of_open_issues(monkeypatch):
 
 
 def test_issue_body_neutralises_mentions():
-    body = issue_body(finding("GHSA-m", "1.0"), "ping @octocat and @org/team; mail a@b.com; `@ok`")
-    assert "`@octocat`" in body and "`@org/team`" in body and "a@b.com" in body and "'`@ok`'" in body
+    text = "ping @octocat and @org/team; mail a@b.com"
+    assert issue_body(finding("GHSA-m", "1.0"), text).startswith("```text\n" + text + "\n```\n")
 
 
 def test_mention_inside_code_span_cannot_break_out():
-    body = issue_body(finding("GHSA-m", "1.0"), "see `run @victim` now")
-    assert "see 'run `@victim`' now" in body
+    text = "see `run @victim` now"
+    assert issue_body(finding("GHSA-m", "1.0"), text).startswith("```text\n" + text + "\n```\n")
+
+
+def test_backslash_cannot_escape_mention_wrapping():
+    text = "a \\@victim b"
+    assert issue_body(finding("GHSA-m", "1.0"), text).startswith("```text\n" + text + "\n```\n")
+
+
+def test_advisory_with_backticks_cannot_close_the_fence():
+    text = "```\n@victim <div>@a</div> &#64;b \u00e9@c\n```"
+    body = issue_body(finding("GHSA-m", "1.0"), text)
+    assert body.startswith("````text\n" + text + "\n````\n")  # 4-backtick fence: the text's 3-backtick lines can't close it
 
 
 def test_llm_prompt_marks_finding_untrusted():
@@ -132,3 +144,35 @@ def test_cli_llm_without_apply_never_builds_client(tmp_path, monkeypatch, capsys
     main()
     out = capsys.readouterr()
     assert "would file" in out.out and "--llm ignored" in out.err
+
+
+def test_broken_lockfile_is_skipped_with_a_warning(tmp_path):
+    (tmp_path / "package-lock.json").write_text("{not json")
+    (tmp_path / "requirements.txt").write_text("\ufeffjinja2==2.4.1\n")  # BOM must not hide the first line
+    warnings = []
+    deps = find_dependencies(tmp_path, warnings)
+    assert [(d["name"], d["source"]) for d in deps] == [("jinja2", "requirements.txt")]
+    assert len(warnings) == 1 and warnings[0].startswith("skipped package-lock.json: JSONDecodeError")
+
+
+def test_symlinks_are_never_followed(tmp_path):
+    outside, repo = tmp_path / "outside", tmp_path / "repo"
+    outside.mkdir()
+    repo.mkdir()
+    (outside / "requirements.txt").write_text("flask==0.12\n")
+    (repo / "requirements.txt").symlink_to(outside / "requirements.txt")  # file link
+    (repo / "linked_dir").symlink_to(outside, target_is_directory=True)  # folder link
+    assert find_dependencies(repo) == []
+
+
+def test_npm_alias_uses_real_package_name():
+    lock = '{"packages": {"node_modules/my-lodash": {"name": "lodash", "version": "4.17.15"}, "node_modules/x": {"name": 5, "version": "1.0.0"}}}'
+    assert parse_package_lock(lock) == [("lodash", "4.17.15"), ("x", "1.0.0")]
+
+
+def test_scan_reports_warnings(tmp_path):
+    from patchpilot.scan import scan  # no deps found -> returns before any network call
+
+    (tmp_path / "package-lock.json").write_text("{not json")
+    report = scan(tmp_path)
+    assert report["dependencies"] == 0 and report["warnings"][0].startswith("skipped package-lock.json")

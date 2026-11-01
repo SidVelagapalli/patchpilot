@@ -29,6 +29,8 @@ def main():
         counts = {}
         for f_ in report["findings"]:
             counts[f_["priority"]] = counts.get(f_["priority"], 0) + 1
+        for w in report["warnings"]:
+            print(f"warning: {w}", file=sys.stderr)
         print(f"{report['dependencies']} dependencies, {len(report['findings'])} findings {counts} -> {args.out}")
     else:
         with open(args.report) as f:

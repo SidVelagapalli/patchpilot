@@ -7,11 +7,12 @@ from patchpilot.intel import fixed_versions, load_kev, priority, query_osv, vuln
 
 
 def scan(root: str) -> dict:
-    deps = find_dependencies(root)
+    warnings: list[str] = []
+    deps = find_dependencies(root, warnings)
     findings = []
     with httpx.Client(headers={"User-Agent": "patchpilot/0.1"}) as client:
         if not deps:
-            return {"dependencies": 0, "findings": []}
+            return {"dependencies": 0, "findings": [], "warnings": warnings}
         hits = query_osv(deps, client)
         kev = load_kev(client)
         details_cache: dict[str, dict] = {}
@@ -31,4 +32,4 @@ def scan(root: str) -> dict:
                     "url": f"https://osv.dev/vulnerability/{vid}",
                 })
     findings.sort(key=lambda f: (f["priority"], f["package"]))
-    return {"dependencies": len(deps), "findings": findings}
+    return {"dependencies": len(deps), "findings": findings, "warnings": warnings}
