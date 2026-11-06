@@ -1,0 +1,28 @@
+# CI for PatchPilot itself: runs the offline test suite. Separate from examples/, which are copied into the repo
+# PatchPilot protects. No secrets, no network calls in the tests, read-only token.
+name: tests
+
+on:
+  push:
+    branches: [main]         # PR branches are covered by pull_request; this avoids running twice
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]   # 3.11 is the minimum in pyproject.toml
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install . pytest
+      - run: pytest -q
