@@ -128,3 +128,7 @@ pytest (with `httpx.MockTransport` for offline GitHub tests), uv. Opt-in, paid: 
 ## License
 
 [MIT](LICENSE)
+
+## Acknowledgments
+
+Built with AI-assisted development tools; the decisions and final review are my own.
