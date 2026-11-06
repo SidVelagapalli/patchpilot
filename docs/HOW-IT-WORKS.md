@@ -1,5 +1,8 @@
 # How PatchPilot works (plain English)
 
+PatchPilot is a scheduled GitHub Action that finds known vulnerabilities in your dependencies and ranks the ones
+attackers are actively exploiting first, then files issues only after a human clicks Run.
+
 ## The problem
 
 Almost every app is built on other people's code: libraries. A shop website might load `lodash` from a CDN, or a

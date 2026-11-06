@@ -3,8 +3,8 @@
 [![tests](https://github.com/SidVelagapalli/patchpilot/actions/workflows/tests.yml/badge.svg)](https://github.com/SidVelagapalli/patchpilot/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**A scheduled GitHub Action that finds exploited vulnerabilities in your dependencies and files issues only after a
-human clicks Run.**
+**A scheduled GitHub Action that finds known vulnerabilities in your dependencies and ranks the ones attackers are
+actively exploiting first, then files issues only after a human clicks Run.**
 
 New to this? Read **[How it works, in plain English](docs/HOW-IT-WORKS.md)** first.
 
