@@ -58,7 +58,7 @@ flowchart TD
 | `src/patchpilot/deps.py` | Finds pinned libraries in a repo (requirements.txt, package-lock.json, CDN tags in HTML). Skips symlinks and broken files, and records a warning for each broken one. |
 | `src/patchpilot/intel.py` | Talks to OSV.dev and the CISA KEV feed, works out which version fixes each bug (comparing versions as numbers, so 4.17.21 > 4.17.9), and ranks P0-P3. |
 | `src/patchpilot/scan.py` | Glues the first half together: libraries -> advisories -> KEV -> ranked findings -> `report.json`. Read-only. |
-| `src/patchpilot/summarize.py` | Turns a finding into a short summary. A free template by default; an LLM via the Anthropic API only with `--llm --apply`. |
+| `src/patchpilot/summarize.py` | Turns a finding into a short summary. A free template by default; an LLM via the Anthropic API only with `--llm --apply` (set `PATCHPILOT_MODEL` to an Anthropic model ID). |
 | `src/patchpilot/issues.py` | Builds each issue's title and body safely, skips advisories that already have an open issue, and creates issues (only with `--apply`). |
 | `src/patchpilot/cli.py` | The `patchpilot` command: `scan` and `file-issues`. If the vulnerability databases are down during a scan, it prints one clear line instead of a crash dump. |
 | `examples/patchpilot-scan.yml` | The weekly GitHub Action: scan, upload the report, show the dry run. Can't write anything. |

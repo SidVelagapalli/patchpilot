@@ -3,11 +3,13 @@ patchpilot file-issues --report report.json --repo owner/name [--apply] [--llm] 
 
 import argparse
 import json
+import os
 import sys
 
 import httpx
 
 from patchpilot.issues import file_issues
+from patchpilot.summarize import MODEL_ENV
 from patchpilot.scan import scan
 
 
@@ -21,7 +23,7 @@ def main():
     i.add_argument("--report", default="report.json")
     i.add_argument("--repo", required=True)
     i.add_argument("--apply", action="store_true", help="actually create issues (default: dry run)")
-    i.add_argument("--llm", action="store_true", help="with --apply: LLM summaries via the Anthropic API (paid)")
+    i.add_argument("--llm", action="store_true", help="with --apply: LLM summaries via the Anthropic API (paid; needs ANTHROPIC_API_KEY and PATCHPILOT_MODEL)")
     args = p.parse_args()
 
     if args.cmd == "scan":
@@ -42,6 +44,8 @@ def main():
         with open(args.report) as f:
             report = json.load(f)
         llm = None
+        if args.llm and not os.environ.get(MODEL_ENV):
+            sys.exit(f"error: --llm needs {MODEL_ENV} set to an Anthropic model ID")
         if args.llm and args.apply:  # dry runs stay free even with --llm
             import anthropic
             llm = anthropic.Anthropic()

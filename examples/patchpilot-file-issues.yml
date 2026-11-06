@@ -50,4 +50,5 @@ jobs:
       - run: patchpilot file-issues --report report.json --repo "$GITHUB_REPOSITORY" --apply
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          PATCHPILOT_MODEL: ${{ vars.PATCHPILOT_MODEL }}   # repository variable (an Anthropic model ID); only used with --llm
           # Paid LLM summaries are opt-in: add --llm above and ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }} here.

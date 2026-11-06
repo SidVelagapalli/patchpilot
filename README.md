@@ -85,8 +85,9 @@ _Filed by PatchPilot after human approval._
   code block whose fence is longer than any run of backticks in the text: GitHub renders no `@mentions`, HTML or
   links there. The package, version, file path, CVE and fixed-in fields are shown as inline code only if they pass an
   allowlist; anything else is hidden.
-- **Free by default.** Summaries use a template. `--llm` (with `--apply` and `ANTHROPIC_API_KEY`) switches to an LLM via the Anthropic API;
-  a key sitting in your environment is never enough to spend money, and dry runs never call it.
+- **Free by default.** Summaries use a template. `--llm` (with `--apply`, `ANTHROPIC_API_KEY`, and `PATCHPILOT_MODEL` set
+  to an Anthropic model ID) switches to LLM summaries via the Anthropic API; a key sitting in your environment is never
+  enough to spend money, and dry runs never call it.
 - **Fail loud.** A broken lockfile is skipped with a warning in the report; an OSV outage stops the scan with a
   one-line error; if GitHub refuses an issue halfway, the run stops and lists what was already filed (re-running is
   safe because open issues are skipped).
@@ -122,7 +123,7 @@ Each Monday: open the scan run, read its summary, then Actions -> "PatchPilot: f
 ## Tech stack
 
 Python 3.11+, [httpx](https://www.python-httpx.org/), OSV.dev API, CISA KEV feed, GitHub REST API, GitHub Actions,
-pytest (with `httpx.MockTransport` for offline GitHub tests), uv. Opt-in, paid: LLM summaries via the Anthropic API.
+pytest (with `httpx.MockTransport` for offline GitHub tests), uv. Opt-in, paid: LLM summaries via the Anthropic API (set `PATCHPILOT_MODEL` to an Anthropic model ID).
 
 ## License
 
