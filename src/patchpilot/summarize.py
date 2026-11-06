@@ -1,6 +1,7 @@
 """Optional LLM step: turn a finding into a plain-English risk summary. Falls back to a template."""
 
 import json
+import sys
 
 MODEL = "<anthropic-model-id>"
 SYSTEM = ("You write 3-sentence vulnerability summaries for a solo developer. Sentence 1: what is vulnerable "
@@ -25,5 +26,6 @@ def summarize(f: dict, client=None) -> str:
         reply = client.messages.create(model=MODEL, max_tokens=250, system=SYSTEM,
                                        messages=[{"role": "user", "content": f"<finding>{data}</finding>"}])
         return reply.content[0].text
-    except Exception:
-        return template(f)  # the LLM is a nice-to-have, never a single point of failure
+    except Exception as e:  # the LLM is a nice-to-have, never a single point of failure, but say when it fails
+        print(f"warning: LLM summary failed for {f['id']}, using the template: {type(e).__name__}: {e}", file=sys.stderr)
+        return template(f)

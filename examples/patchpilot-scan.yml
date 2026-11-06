@@ -1,0 +1,37 @@
+# Copy into the repo you want to protect as .github/workflows/patchpilot-scan.yml (e.g. shraddha-store).
+# Step 1 of 2, read-only: scans, uploads report.json and lists what WOULD be filed on the run's summary page.
+# Nothing is filed here. To file, read that summary, then run "PatchPilot: file issues" with this run's ID.
+name: "PatchPilot: scan"
+
+on:
+  schedule:
+    - cron: "17 13 * * 1"   # every Monday 13:17 UTC
+  workflow_dispatch:         # plus a "Run workflow" button for manual runs
+
+permissions:
+  contents: read             # this workflow can't write to the repo or its issues
+
+env:
+  # Install a PatchPilot commit you reviewed, never whatever is on main. Put its full 40-character SHA here.
+  PATCHPILOT_SHA: REPLACE_WITH_PATCHPILOT_COMMIT_SHA
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false   # don't leave the token in .git/config
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: "3.12"
+      - run: pip install "git+https://github.com/SidVelagapalli/patchpilot@${PATCHPILOT_SHA}"
+      - run: patchpilot scan --path . --out report.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: patchpilot-report
+          path: report.json
+      - name: Show what would be filed (dry run, no token)
+        run: |
+          echo "Run ID for \"PatchPilot: file issues\": $GITHUB_RUN_ID (advisories that already have an open issue will be skipped)" >> "$GITHUB_STEP_SUMMARY"
+          patchpilot file-issues --report report.json --repo "$GITHUB_REPOSITORY" >> "$GITHUB_STEP_SUMMARY"

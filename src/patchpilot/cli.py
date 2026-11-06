@@ -5,6 +5,8 @@ import argparse
 import json
 import sys
 
+import httpx
+
 from patchpilot.issues import file_issues
 from patchpilot.scan import scan
 
@@ -23,7 +25,11 @@ def main():
     args = p.parse_args()
 
     if args.cmd == "scan":
-        report = scan(args.path)
+        try:
+            report = scan(args.path)
+        except (httpx.HTTPError, ValueError, KeyError) as e:  # OSV/CISA down, slow or sending garbage: no traceback
+            sys.exit(f"error: scan failed: {type(e).__name__}: {e}\n"
+                     f"Usually OSV.dev or CISA KEV is down or sent bad data. Nothing was written.")
         with open(args.out, "w") as f:
             json.dump(report, f, indent=2)
         counts = {}

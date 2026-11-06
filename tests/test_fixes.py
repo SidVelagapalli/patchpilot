@@ -30,19 +30,22 @@ class FakeClient:
         return SimpleNamespace(content=[SimpleNamespace(text="LLM says hi")])
 
 
-def fake_github(monkeypatch, pages):
-    """Patch httpx.Client in issues; pages[n-1] is the list of open issues on page n. Returns POSTed issue bodies."""
-    posted = []
+def fake_github(monkeypatch, pages, label_status=201, issue_statuses=()):
+    """Patch httpx.Client in issues; pages[n-1] is the list of open issues on page n. Returns POSTed issue bodies.
+    issue_statuses: status codes for successive issue POSTs (201 once they run out)."""
+    posted, statuses = [], list(issue_statuses)
 
     def handler(request):
         if request.method == "POST" and request.url.path == "/repos/me/repo/labels":
-            return httpx.Response(201, json={})
+            return httpx.Response(label_status, json={})
         if request.method == "GET" and request.url.path == "/repos/me/repo/issues":
             n = int(request.url.params["page"])
             return httpx.Response(200, json=pages[n - 1] if n <= len(pages) else [])
         if request.method == "POST" and request.url.path == "/repos/me/repo/issues":
-            posted.append(request.read())
-            return httpx.Response(201, json={})
+            status = statuses.pop(0) if statuses else 201
+            if status == 201:
+                posted.append(request.read())
+            return httpx.Response(status, json={"message": "nope"} if status != 201 else {})
         return httpx.Response(404, json={})
 
     monkeypatch.setenv("GITHUB_TOKEN", "t")
@@ -176,3 +179,76 @@ def test_scan_reports_warnings(tmp_path):
     (tmp_path / "package-lock.json").write_text("{not json")
     report = scan(tmp_path)
     assert report["dependencies"] == 0 and report["warnings"][0].startswith("skipped package-lock.json")
+
+
+def test_untrusted_fields_are_inline_code_or_hidden():
+    f = finding("GHSA-u", "1.0 @victim", package="@supabase/supabase-js", source="a`@x.html",
+                cves=["CVE-2021-1", "CVE-1\n@victim"], fixed_in=["4.17.21", "<img src=x>"])
+    body = issue_body(f, "s")
+    assert "`@supabase/supabase-js` `1.0 @victim`" in body  # @ inside a code span notifies nobody
+    assert "found in `(hidden: unexpected characters)`" in body  # backtick would close the span
+    assert "`CVE-2021-1`, `(hidden: unexpected characters)`" in body  # newline would end the line
+    assert "`4.17.21`, `(hidden: unexpected characters)`" in body and "<img" not in body
+
+
+def test_scan_outage_exits_with_clear_message(tmp_path, monkeypatch):
+    import pytest
+
+    import patchpilot.cli
+
+    def down(path):
+        raise httpx.ConnectError("connection refused")  # ValueError/KeyError (bad JSON from OSV) take the same path
+
+    monkeypatch.setattr(patchpilot.cli, "scan", down)
+    out = tmp_path / "report.json"
+    monkeypatch.setattr("sys.argv", ["patchpilot", "scan", "--path", str(tmp_path), "--out", str(out)])
+    with pytest.raises(SystemExit) as exit_:
+        patchpilot.cli.main()
+    assert "scan failed: ConnectError" in str(exit_.value.code) and not out.exists()
+
+
+def test_missing_token_stops_with_clear_message(monkeypatch):
+    import pytest
+
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    with pytest.raises(SystemExit) as exit_:
+        file_issues({"findings": [finding("GHSA-t")]}, "me/repo", dry_run=False)
+    assert "GITHUB_TOKEN is not set" in str(exit_.value.code)
+
+
+def test_label_error_is_not_ignored(monkeypatch):
+    import pytest
+
+    posted = fake_github(monkeypatch, [[]], label_status=403)
+    with pytest.raises(SystemExit) as exit_:
+        file_issues({"findings": [finding("GHSA-l")]}, "me/repo", dry_run=False)
+    assert "could not create label 'patchpilot' in me/repo (403)" in str(exit_.value.code) and posted == []
+
+
+def test_mid_run_failure_says_what_was_filed(monkeypatch):
+    import pytest
+
+    posted = fake_github(monkeypatch, [[]], issue_statuses=[201, 403])
+    with pytest.raises(SystemExit) as exit_:
+        file_issues({"findings": [finding("GHSA-1"), finding("GHSA-2"), finding("GHSA-3")]}, "me/repo", dry_run=False)
+    msg = str(exit_.value.code)
+    assert "refused '[P1] GHSA-2 in p@1' (403)" in msg and "Filed before this (1): ['[P1] GHSA-1 in p@1']" in msg
+    assert len(posted) == 1  # GHSA-3 was never attempted
+
+
+def test_llm_failure_warns_and_uses_template(capsys):
+    class Broken:
+        class messages:
+            @staticmethod
+            def create(**kw):
+                raise RuntimeError("401 invalid key")
+
+    f = finding("GHSA-w", "1.0")
+    assert summarize(f, Broken()) == template(f)
+    assert "warning: LLM summary failed for GHSA-w" in capsys.readouterr().err
+
+
+def test_label_already_exists_is_fine(monkeypatch):
+    posted = fake_github(monkeypatch, [[]], label_status=422)  # 422 = label exists from an earlier run
+    assert file_issues({"findings": [finding("GHSA-e")]}, "me/repo", dry_run=False) == ["[P1] GHSA-e in p@1"]
+    assert len(posted) == 1

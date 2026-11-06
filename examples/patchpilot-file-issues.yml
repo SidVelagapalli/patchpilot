@@ -1,0 +1,53 @@
+# Copy into the same repo as .github/workflows/patchpilot-file-issues.yml.
+# Step 2 of 2, the human gate: never scheduled. Someone with write access reads a scan run's summary page,
+# then clicks "Run workflow" here and pastes that run's ID. Only then are issues filed.
+# (Environment "required reviewers" don't work on private repos on GitHub Free, so the gate is this manual trigger.)
+name: "PatchPilot: file issues"
+
+on:
+  workflow_dispatch:
+    inputs:
+      scan_run_id:
+        description: "Run ID of the 'PatchPilot: scan' run whose summary you reviewed"
+        required: true
+        type: string
+
+permissions: {}              # nothing by default; the job asks for exactly what it needs
+
+env:
+  PATCHPILOT_SHA: REPLACE_WITH_PATCHPILOT_COMMIT_SHA   # the same reviewed commit as patchpilot-scan.yml
+
+jobs:
+  file-issues:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read          # look up the scan run and download its report
+      issues: write          # create labels and issues
+    steps:
+      - name: Check the ID is a successful scan run on the default branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.scan_run_id }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]] || { echo "::error::scan_run_id must be a number"; exit 1; }
+          got=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq '[.path, .head_branch, .conclusion, .event] | join(" ")')
+          want=".github/workflows/patchpilot-scan.yml $DEFAULT_BRANCH success"
+          # a report from any other workflow (e.g. a pull request's) could be crafted; only trust our own scan
+          case "$got" in
+            "$want schedule" | "$want workflow_dispatch") echo "OK: $got" ;;
+            *) echo "::error::run $RUN_ID is not a successful PatchPilot scan on $DEFAULT_BRANCH (got: $got)"; exit 1 ;;
+          esac
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: "3.12"
+      - run: pip install "git+https://github.com/SidVelagapalli/patchpilot@${PATCHPILOT_SHA}"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: patchpilot-report
+          run-id: ${{ inputs.scan_run_id }}
+          github-token: ${{ github.token }}
+      - run: patchpilot file-issues --report report.json --repo "$GITHUB_REPOSITORY" --apply
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          # Paid LLM summaries are opt-in: add --llm above and ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }} here.
