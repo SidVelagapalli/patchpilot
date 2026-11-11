@@ -96,7 +96,7 @@ _Filed by PatchPilot after human approval._
 
 ```
 git clone https://github.com/SidVelagapalli/patchpilot && cd patchpilot
-uv run pytest -q                                                    # 32 offline tests, no network
+uv run pytest -q                                                    # 35 offline tests, no network
 uv run patchpilot scan --path /path/to/your/project --out report.json
 uv run patchpilot file-issues --report report.json --repo you/your-repo   # dry run: prints, files nothing
 ```

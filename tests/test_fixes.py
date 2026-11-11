@@ -105,6 +105,16 @@ def test_dedupe_reads_every_page_of_open_issues(monkeypatch):
     assert titles == [] and posted == []
 
 
+def test_odd_advisory_id_matches_its_own_open_issue(monkeypatch):
+    odd, other = finding("GHSA x`<1"), finding("GHSA x`<2")  # space + backtick + "<": unsafe in a title
+    first = file_issues({"findings": [odd, other]}, "me/repo", dry_run=True)
+    assert len(first) == 2 and first[0] != first[1]  # different odd ids don't collide
+    posted = fake_github(monkeypatch, [[{"title": first[0]}]])  # odd's issue is already open
+    titles = file_issues({"findings": [odd, other]}, "me/repo", dry_run=False)
+    assert titles == [first[1]] and len(posted) == 1  # odd is skipped, other is filed
+    assert "`" not in first[0] and "<" not in first[0]
+
+
 def test_issue_body_neutralises_mentions():
     text = "ping @octocat and @org/team; mail a@b.com"
     assert issue_body(finding("GHSA-m", "1.0"), text).startswith("```text\n" + text + "\n```\n")

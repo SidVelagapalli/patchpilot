@@ -1,6 +1,7 @@
 """Step 2 of the pipeline: file one GitHub issue per finding. This is the only step that WRITES,
 so in GitHub Actions it runs in its own workflow that a human triggers by hand after reading the scan's summary."""
 
+import hashlib
 import os
 import re
 import sys
@@ -23,10 +24,18 @@ def code(value: str) -> str:
     return f"`{value}`" if SAFE.fullmatch(value) else "`(hidden: unexpected characters)`"
 
 
+def title_id(advisory_id: str) -> str:
+    """The advisory id as written in the issue title AND as compared for dedupe, so the two always match.
+    Unsafe characters (and spaces, which would split the title) become "_"; if anything changed, a short hash of the
+    original keeps two different odd ids from colliding. Normal OSV ids (GHSA-/PYSEC-/CVE-) come back unchanged."""
+    clean = re.sub(r"[^\w.+!~/@()-]", "_", advisory_id)
+    return clean if clean == advisory_id else f"{clean}-{hashlib.sha256(advisory_id.encode()).hexdigest()[:8]}"
+
+
 def issue_title(f: dict) -> str:
     """Plain text (GitHub doesn't render titles), but the dry run shows it on the summary page, so hide unsafe values."""
-    plain = [v if SAFE.fullmatch(v) else "(hidden)" for v in (f["id"], f["package"], f["version"])]
-    return f"[{f['priority']}] {plain[0]} in {plain[1]}@{plain[2]}"
+    plain = [v if SAFE.fullmatch(v) else "(hidden)" for v in (f["package"], f["version"])]
+    return f"[{f['priority']}] {title_id(f['id'])} in {plain[0]}@{plain[1]}"
 
 
 def fenced(text: str) -> str:
@@ -50,11 +59,12 @@ def issue_body(f: dict, summary: str) -> str:
 
 
 def new_findings(findings: list[dict], seen: set[str]) -> list[dict]:
-    """Drop findings whose advisory id is in `seen` (exact match) or already earlier in this run. Mutates `seen`."""
+    """Drop findings whose title id is in `seen` (exact match) or already earlier in this run. Mutates `seen`.
+    Compares title_id(), because `seen` is read back from issue titles."""
     out = []
     for f in findings:
-        if f["id"] not in seen:
-            seen.add(f["id"])
+        if title_id(f["id"]) not in seen:
+            seen.add(title_id(f["id"]))
             out.append(f)
     return out
 
